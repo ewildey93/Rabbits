@@ -34,7 +34,7 @@ DateKey <- data.frame(TagId=Tag781$TagId[1], Date=DateSeqTag781, Date2=DateSeqTa
 TimeRange <- data.frame(ObsStart=as.character(), ObsEnd=as.character(), TimeDiff=as.numeric(),
                         DateKeyStart=as.character(), DateKeyEnd=as.character(), TagId=as.character())
 for (i in 1:length(DateKey$Date)){
-subsetTag <- Tag781[between(Tag781$DateTime, DateKey$Date[i], DateKey$Date2[i]),]
+subsetTag <- Locs[between(Locs$DateTime, DateKey$Date[i], DateKey$Date2[i]),]
 if(nrow(subsetTag) > 0){
   y <- range(subsetTag$DateTime)
   y <- as.data.frame(as.list(y))
