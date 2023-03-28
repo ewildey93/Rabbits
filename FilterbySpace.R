@@ -23,6 +23,8 @@ library(sp)
 Locs4 <- lapply(Locs3, function (x) st_as_sf(x, coords = c("x.est", "y.est"), crs=CRS("+init=epsg:32613")))
 AvgLocs <- lapply(Locs4, function (x) x%>%summarise(geometry=st_union(geometry))%>%st_centroid)
 AvgLocs <- lapply(AvgLocs, function (x) st_coordinates(x))
-Locs5 <- t(mapply(function (x,y) mutate(x, distance=st_distance(x,y)), x=Locs4, y=AvgLocs))
+Locs5 <- Map(function (x,y) mutate(x, distance=st_distance(x,y)), Locs4, AvgLocs)
 ########################scrap###################################
-
+x <- as.data.frame(t(st_distance(AvgLocs[["781E4B78 01/19-01/20"]], Locs4[["781E4B78 01/19-01/20"]])))
+y <- as.data.frame(Locs5[["781E4B78 01/19-01/20"]][["distance"]])
+test <- cbind(x,y)
