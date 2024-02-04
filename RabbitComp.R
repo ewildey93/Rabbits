@@ -40,11 +40,12 @@ DTimes2 <- read.csv("./Deployment Times - Sheet2.csv", na.strings = c("", "NA"))
 DTimes2$setup <- str_extract(DTimes2$X, ".*(?=-)")
 DTimes2$retrieval <- ifelse(!is.na(DTimes2$X.1)==FALSE, str_extract(DTimes2$X, "(?<=-).*"),
                             str_extract(DTimes2$X.1, "(?<=-).*"))
-DTimes2$probFrom <-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
+DTimes2$Problem1_from<-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
                           str_extract(DTimes2$X, "(?<=-).*"))
-DTimes2$probTo <-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
+DTimes2$Problem1_to <-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
                         str_extract(DTimes2$X.1, ".*(?=-)"))
-camOps <- cameraOperation(CTtable = DTimes2, stationCol = "Camera", )
+camOps <- cameraOperation(CTtable = DTimes2, stationCol = "Camera", setupCol = "setup",
+                          retrievalCol = "retrieval", hasProblems = T, dateFormat = "%m/%d/%Y")
 
 
 JackDetect <- detectionHistory(recordTable = camdf, species = "White-tailed Jackrabbit", camOp = ,
