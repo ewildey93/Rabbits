@@ -37,24 +37,31 @@ df$cam <- as.factor(df$cam)
 
 #make camera operability matrix
 DTimes2 <- read.csv("./Deployment Times - Sheet2.csv", na.strings = c("", "NA"))
-DTimes2$setup <- str_extract(DTimes2$X, ".*(?=-)")
-DTimes2$retrieval <- ifelse(!is.na(DTimes2$X.1)==FALSE, str_extract(DTimes2$X, "(?<=-).*"),
-                            str_extract(DTimes2$X.1, "(?<=-).*"))
-DTimes2$Problem1_from<-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
-                          str_extract(DTimes2$X, "(?<=-).*"))
-DTimes2$Problem1_to <-ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
-                        str_extract(DTimes2$X.1, ".*(?=-)"))
+DTimes2$setup <- as.Date(str_extract(DTimes2$X, ".*(?=-)"), format= "%m/%d/%Y")
+DTimes2$retrieval <- as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, str_extract(DTimes2$X, "(?<=-).*"),
+                            str_extract(DTimes2$X.1, "(?<=-).*")), format= "%m/%d/%Y")
+DTimes2$Problem1_from<-as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
+                          str_extract(DTimes2$X, "(?<=-).*")), format= "%m/%d/%Y")
+DTimes2$Problem1_to <-as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
+                        str_extract(DTimes2$X.1, ".*(?=-)")), format= "%m/%d/%Y")
 camOps <- cameraOperation(CTtable = DTimes2, stationCol = "Camera", setupCol = "setup",
                           retrievalCol = "retrieval", hasProblems = T, dateFormat = "%m/%d/%Y")
+min(DTimes2$setup)
+max(DTimes2$retrieval)
+max(DTimes2$retrieval)-min(DTimes2$setup)
 
-
-JackDetect <- detectionHistory(recordTable = camdf, species = "White-tailed Jackrabbit", camOp = ,
-                               output="binary", stationCol = "deployment_id", speciesCol = "common_name",
-                                recordDateTimeCol = "timestamp", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
-                               occasionLength = 1, timeZone = "America/Denver")
-CottontDetect <-
-
-
+JackDetect <- detectionHistory(recordTable = df, species = "White-tailed Jackrabbit", camOp = camOps,
+                               output="binary", stationCol = "cam", speciesCol = "species",
+                                recordDateTimeCol = "datetime", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
+                                timeZone = "America/Denver", includeEffort = FALSE, occasionLength = 1,
+                               day1="2022-04-02")
+CottonDetect <- detectionHistory(recordTable = df, species = "Mountain Cottontail", camOp = camOps,
+                                  output="binary", stationCol = "cam", speciesCol = "species",
+                                  recordDateTimeCol = "datetime", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
+                                  timeZone = "America/Denver", includeEffort = FALSE, occasionLength = 1,
+                                  day1="2022-04-02")
+colnames(JackDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+colnames(CottonDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
 
 #####Covariates######################
 # Camera Grid shapefile
