@@ -2,6 +2,12 @@ library(camtrapR)
 library(ggplot2)
 library(lubridate)
 library(stringr)
+library(sf)
+library(raster)
+library(terra)
+library(purrr)
+library(corrplot)
+library(rnoaa)
 setwd("C:/Users/eliwi/OneDrive/Documents/R/Rabbits/Rabbits")
 
 
@@ -65,8 +71,8 @@ colnames(CottonDetect[["detection_history"]]) <- as.character(seq.Date(min(DTime
 
 #####Covariates######################
 # Camera Grid shapefile
-Grid <- readOGR("C:/Users/eliwi/OneDrive/Documents/Salida/GeospatialLayers/Grid3.shp")
-CamLocs <- read.csv("./CamLocs.csv")
+Grid <- st_read("C:/Users/eliwi/OneDrive/Documents/Salida/GeospatialLayers/Grid3.shp")
+CamLocs <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/CamLocs.csv")
 str(CamLocs)
 CamLocs <- CamLocs[-c(38:41),]
 CamLocs[25, c(2,3)] <- c("38.498457","-105.986953")
@@ -129,7 +135,7 @@ colnames(ShrubDF)[2:5] <- c("lc100.Shrub","Shrub", "lc250.Shrub","lc385.Shrub")
 #convert herbaceous cover to polygon and get distance to values
 herb <- rasterToPolygons(lc2, function (x) x == 71, n=16, dissolve = T)
 writeOGR(herb, "./", "herbPoly.shp", driver="ESRI Shapefile")
-herb <- st_read(dsn="./", layer="herbPoly.shp")
+herb <- st_read(dsn="C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/", layer="herbPoly.shp")
 crs(herb)
 crs(CamLocsSF)
 CamLocs$distidx <- st_nearest_feature(CamLocsSF, herb)
@@ -137,59 +143,111 @@ CamLocs$distherb <- st_distance(CamLocsSF, herb[CamLocs$distidx,], by_element = 
 #CamLocs2$distherb <- CamLocs$distherb
 CamLocs2 <- CamLocs[,-c(4:11,12)]
 
-#get relative activity of humans
-camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
-df <- camdf[camdf$genus=="Homo",]
-df <- df[,c(2,16,17,22)]
-colnames(df) <- c("cam","datetime","count","comments")
-df$datetime <- as.POSIXct(df$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
-BUSH3 <- which(df$cam == "BUSH3")
-df$cam <- replace(x = df$cam,list=BUSH3, values = "BUSH4")
-df$week <- week(df$datetime)
-df <- df %>% group_by(cam, week)%>% mutate(HumanSum= sum(count))
-HumansatCam <- df%>%group_by(cam)%>%summarise(mean(HumanSum))
-colnames(HumansatCam)[1] <- "Camera"
-
-#relative activity of predators
-camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
-predators <-c("Grey Fox", "Red Fox", "Coyote", "Canis Species", "Bobcat", "Puma", "Canine Family", "Carnivorous Mammal")
-df <- camdf[camdf$genus=="Homo",]
-df <- df[,c(2,16,17,22)]
-colnames(df) <- c("cam","datetime","count","comments")
-df$datetime <- as.POSIXct(df$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
-BUSH3 <- which(df$cam == "BUSH3")
-df$cam <- replace(x = df$cam,list=BUSH3, values = "BUSH4")
-df$week <- week(df$datetime)
-df <- df %>% group_by(cam, week)%>% mutate(HumanSum= sum(count))
-HumansatCam <- df%>%group_by(cam)%>%summarise(mean(HumanSum))
-colnames(HumansatCam)[1] <- "Camera"
-
 #slope
-Slope <- raster("./Slope2.tif")
+Slope <- raster("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/Slope2.tif")
 projection(Slope)
 CamLocsSF<-st_transform(CamLocsSF, projection(Slope))
 CamLocs2$slope<-raster::extract(Slope, CamLocsSF)
 CamLocs2$slope100 <- raster::extract(Slope, CamLocsSF, buffer=100, fun=function(x) mean(x))
 
 
-#join all dfs in prep for regression
+###########################################################################
+##   get relative abundance of humans & predators for covariates         ##
+###########################################################################
+#get independent events  for later use in relative abundance (RA) of humans/preds
+#get effort for use in RA index
+max(DTimes2$setup)
+study_dates <- c("2022-04-15", "2022-05-15")
+colidx <- which(colnames(camOps) %in% study_dates)
+Effort <- data.frame("Effort"=rowSums(camOps[,14:44], na.rm=T))
+camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
+colnames(camdf)[c(14,16)] <- c("SPP", "DateTimeOriginal")
+camdf2 <- assessTemporalIndependence2(intable = camdf,deltaTimeComparedTo = "lastRecord",
+                                        columnOfInterest = "SPP", camerasIndependent = FALSE,
+                                        stationCol = "deployment_id",minDeltaTime = 30)
+camdf2 <- camdf2[camdf2$independent]
+##    get relative activity of humans ##
+ppldf <- camdf[camdf$genus=="Homo",]
+ppldf <- df[,c(2,16,17,22)]
+colnames(ppldf) <- c("cam","datetime","count","comments")
+ppldf$datetime <- as.POSIXct(ppldf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
+BUSH3 <- which(ppldf$cam == "BUSH3")
+ppldf$cam <- replace(x = ppldf$cam,list=BUSH3, values = "BUSH4")
+ppldf2 <- ppldf[ppldf$datetime > study_dates[1] & ppldf$datetime < study_dates[2],]
+ppldf2 <- ppldf2 %>% group_by(cam)%>% summarise(HumanSum= sum(count))
+colnames(ppldf2) <- c("Camera", "SumPpl")
+noppl <- which(DTimes2$Camera %in% ppldf2$Camera == FALSE)
+nopplrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPpl" = 0)
+HumansatCam <- rbind(ppldf2, nopplrow)
+HumansatCam$RA <- HumansatCam$SumPpl/Effort$Effort
+
+##   relative activity of predators ##
+predators <-c("Grey Fox", "Red Fox", "Coyote", "Canis Species", "Bobcat", "Puma", "Canine Family", "Carnivorous Mammal")
+predf <- camdf[camdf$common_name %in% predators,]
+
+predf <- predf[,c(2,16,17,22)]
+colnames(predf) <- c("cam","datetime","count","comments")
+predf$datetime <- as.POSIXct(predf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
+
+BUSH3 <- which(predf$cam == "BUSH3")
+predf$cam <- replace(x = predf$cam,list=BUSH3, values = "BUSH4")
+
+predf2 <- predf[predf$datetime > study_dates[1] & predf$datetime < study_dates[2],]
+predf2 <- predf2 %>% group_by(cam)%>% summarise(PredSum= sum(count))
+colnames(predf2) <- c("Camera", "SumPreds")
+nopreds <- which(DTimes2$Camera %in% predf2$Camera == FALSE)
+nopredsrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPreds" = 0)
+PredsatCam <- rbind(predf2, nopredsrow)
+PredsatCam$RA <- PredsatCam$SumPreds/Effort$Effort
+
+
+##########################################
+##    join all dfs in prep for modeling ##
+##########################################
 CamLocs2
 CamLocs2$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8","BUSH9")
 
-CoVsList <- list(HumansatCam,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
+CoVsList <- list(PredsatCam,HumansatCam,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
 CoVs <- CoVsList%>% reduce(left_join, by="Camera")
 CoVs[CoVs$Camera == "BUSH3",]
 saveRDS(CoVs, "CoVsRabbitCo.rds")
 CoVs <- readRDS("./CoVsRabbitCo.rds")
 
-#models
-CoVs <- RegDF[,c(2, 5:10,12:14,16,17)]
-corrplot(cor(CoVs),
+#correlation between covariates?
+corrplot(cor(CoVs[, unlist(lapply(CoVs, is.numeric))]),
          method = "number",
          type = "upper" # show only upper side
 )
 
-#functions
+######################################
+##     detection covariates         ##
+######################################
+lat_lon_df <- data.frame(id = "Salida",
+                         lat = 38.498805,
+                         lon = -106.014202)
+mon_near_pw <-
+  meteo_nearby_stations(
+    lat_lon_df = lat_lon_df,
+    lat_colname = "lat",
+    lon_colname = "lon",
+    var = "PRCP",
+    year_min = 2022,
+    year_max = 2022,
+    limit = 10,
+  )
+mon_near_pw
+pw_prcp_dat <-
+  meteo_pull_monitors(
+    monitors = mon_near_pw$pw$id[3],
+    date_min = "2022-04-02",
+    date_max = "2022-08-30",
+    var = "PRCP"
+  )
+head(pw_prcp_dat)
+
+##########################################################
+##                      functions                       ##
+##########################################################
 summarizeLC <- function(x,LC_classes,LC_names = NULL){
   # Find the number of cells
   y <- length(x)
