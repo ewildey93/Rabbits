@@ -8,31 +8,33 @@ library(terra)
 library(purrr)
 library(corrplot)
 library(rnoaa)
+library(data.table)
+library(dplyr)
 setwd("C:/Users/eliwi/OneDrive/Documents/R/Rabbits/Rabbits")
 
-
-camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/images.csv")
-str(camdf)
-table(camdf$deployment_id)
-table(camdf$common_name)
-camdf$timestamp <- as.POSIXct(camdf$timestamp,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
+#no human detections in this csv
+camdf1 <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/images.csv")
+str(camdf1)
+table(camdf1$deployment_id)
+table(camdf1$common_name)
+camdf1$timestamp <- as.POSIXct(camdf1$timestamp,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
 #BUSH31 fix dates
 datefix <- c("7-19-2022 00:00:00", "4-24-2022 00:00:00")
 datefix <- as.POSIXct(datefix, format="%m-%d-%Y %H:%M:%S")
 datefix[1]-datefix[2] #86 days
 datefix[2] + 60*60*24*86
-for (i in 1:nrow(camdf)){
-  if(camdf$timestamp[i] < "2022-07-19 00:00:00" & camdf$deployment_id[i] == "BUSH31") {
-    camdf$timestamp[i] <- camdf$timestamp[i] + 60*60*24*86
+for (i in 1:nrow(camdf1)){
+  if(camdf1$timestamp[i] < "2022-07-19 00:00:00" & camdf1$deployment_id[i] == "BUSH31") {
+    camdf1$timestamp[i] <- camdf1$timestamp[i] + 60*60*24*86
   }
 }
 #check to make sure BUSH31 dates are fixed
-ggplot(camdf[camdf$deployment_id == "BUSH31",], aes(x=as.Date(timestamp))) + geom_histogram(binwidth = 1)
-Bush31 <- camdf[camdf$deployment_id == "BUSH31",]
+ggplot(camdf1[camdf1$deployment_id == "BUSH31",], aes(x=as.Date(timestamp))) + geom_histogram(binwidth = 1)
+Bush31 <- camdf1[camdf1$deployment_id == "BUSH31",]
 
 
 #winnow dataframe down to lagomorphs
-df <- camdf[camdf$common_name=="White-tailed Jackrabbit" | camdf$common_name == "Mountain Cottontail",]
+df <- camdf1[camdf1$common_name=="White-tailed Jackrabbit" | camdf1$common_name == "Mountain Cottontail",]
 df <- df[,c(2,4,14,16,17,22)]
 colnames(df) <- c("cam","file","species","datetime","count","comments")
 #replace BUSH3 with BUSH4
@@ -51,7 +53,7 @@ DTimes2$Problem1_from<-as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
 DTimes2$Problem1_to <-as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
                         str_extract(DTimes2$X.1, ".*(?=-)")), format= "%m/%d/%Y")
 camOps <- cameraOperation(CTtable = DTimes2, stationCol = "Camera", setupCol = "setup",
-                          retrievalCol = "retrieval", hasProblems = T, dateFormat = "%m/%d/%Y")
+                          retrievalCol = "retrieval", hasProblems = T, dateFormat = "%Y-%m-%d")
 min(DTimes2$setup)
 max(DTimes2$retrieval)
 max(DTimes2$retrieval)-min(DTimes2$setup)
@@ -160,15 +162,32 @@ max(DTimes2$setup)
 study_dates <- c("2022-04-15", "2022-05-15")
 colidx <- which(colnames(camOps) %in% study_dates)
 Effort <- data.frame("Effort"=rowSums(camOps[,14:44], na.rm=T))
+Effort$Camera <- rownames(Effort)
+#human detections in this csv
 camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
-colnames(camdf)[c(14,16)] <- c("SPP", "DateTimeOriginal")
+table(camdf$common_name)
+camdf$timestamp <- as.POSIXct(camdf$timestamp,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
+camdf$DateTimeOriginal <- camdf$timestamp
+#BUSH31 fix dates
+datefix <- c("7-19-2022 00:00:00", "4-24-2022 00:00:00")
+datefix <- as.POSIXct(datefix, format="%m-%d-%Y %H:%M:%S")
+datefix[1]-datefix[2] #86 days
+datefix[2] + 60*60*24*86
+for (i in 1:nrow(camdf)){
+  if(camdf$timestamp[i] < "2022-07-19 00:00:00" & camdf$deployment_id[i] == "BUSH31") {
+    camdf$timestamp[i] <- camdf$timestamp[i] + 60*60*24*86
+  }
+}
+colnames(camdf)[14] <- "SPP"
 camdf2 <- assessTemporalIndependence2(intable = camdf,deltaTimeComparedTo = "lastRecord",
                                         columnOfInterest = "SPP", camerasIndependent = FALSE,
                                         stationCol = "deployment_id",minDeltaTime = 30)
-camdf2 <- camdf2[camdf2$independent]
+camdf3 <- camdf2[camdf2$independent == TRUE,]
+saveRDS(camdf2, "./camdf2indobs.rds")
+saveRDS(camdf3, "./camdf3indonly.rds")
 ##    get relative activity of humans ##
-ppldf <- camdf[camdf$genus=="Homo",]
-ppldf <- df[,c(2,16,17,22)]
+ppldf <- camdf3[camdf3$genus=="Homo",]
+ppldf <- ppldf[,c(2,16,17,22)]
 colnames(ppldf) <- c("cam","datetime","count","comments")
 ppldf$datetime <- as.POSIXct(ppldf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
 BUSH3 <- which(ppldf$cam == "BUSH3")
@@ -177,13 +196,15 @@ ppldf2 <- ppldf[ppldf$datetime > study_dates[1] & ppldf$datetime < study_dates[2
 ppldf2 <- ppldf2 %>% group_by(cam)%>% summarise(HumanSum= sum(count))
 colnames(ppldf2) <- c("Camera", "SumPpl")
 noppl <- which(DTimes2$Camera %in% ppldf2$Camera == FALSE)
-nopplrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPpl" = 0)
+nopplrow <- data.frame("Camera"=DTimes2$Camera[noppl], "SumPpl" = 0)
 HumansatCam <- rbind(ppldf2, nopplrow)
-HumansatCam$RA <- HumansatCam$SumPpl/Effort$Effort
+HumansatCam2 <- left_join(HumansatCam, Effort, by="Camera")
+HumansatCam2$RA <- HumansatCam2$SumPpl/HumansatCam2$Effort
+#NAs in RA where no cam effort is
 
 ##   relative activity of predators ##
 predators <-c("Grey Fox", "Red Fox", "Coyote", "Canis Species", "Bobcat", "Puma", "Canine Family", "Carnivorous Mammal")
-predf <- camdf[camdf$common_name %in% predators,]
+predf <- camdf3[camdf3$SPP %in% predators,]
 
 predf <- predf[,c(2,16,17,22)]
 colnames(predf) <- c("cam","datetime","count","comments")
@@ -198,8 +219,9 @@ colnames(predf2) <- c("Camera", "SumPreds")
 nopreds <- which(DTimes2$Camera %in% predf2$Camera == FALSE)
 nopredsrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPreds" = 0)
 PredsatCam <- rbind(predf2, nopredsrow)
-PredsatCam$RA <- PredsatCam$SumPreds/Effort$Effort
-
+PredsatCam2 <- left_join(PredsatCam, Effort, by="Camera")
+PredsatCam2$RA <- PredsatCam2$SumPreds/PredsatCam2$Effort
+#NAs in RA where no cam effort is
 
 ##########################################
 ##    join all dfs in prep for modeling ##
@@ -207,7 +229,7 @@ PredsatCam$RA <- PredsatCam$SumPreds/Effort$Effort
 CamLocs2
 CamLocs2$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8","BUSH9")
 
-CoVsList <- list(PredsatCam,HumansatCam,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
+CoVsList <- list(PredsatCam2,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
 CoVs <- CoVsList%>% reduce(left_join, by="Camera")
 CoVs[CoVs$Camera == "BUSH3",]
 saveRDS(CoVs, "CoVsRabbitCo.rds")
@@ -398,7 +420,7 @@ assessTemporalIndependence2 <- function(intable,
 
 
   # keep only independent records
-  outtable <- intable[intable$independent,]
+  outtable <- intable #[intable$independent,]
 
 
   # compute delta time in hours and days
