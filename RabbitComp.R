@@ -1,3 +1,5 @@
+#have to change detection matrices (84,85) and relative abundances of humans and
+#predators at camera sites when study dates are changed
 library(camtrapR)
 library(ggplot2)
 library(lubridate)
@@ -11,6 +13,10 @@ library(rnoaa)
 library(data.table)
 library(dplyr)
 setwd("C:/Users/eliwi/OneDrive/Documents/R/Rabbits/Rabbits")
+
+
+#set dates of study
+study_dates <- c("2022-05-04", "2022-06-04")
 
 #no human detections in this csv
 camdf1 <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/images.csv")
@@ -55,6 +61,7 @@ DTimes2$Problem1_to <-as.Date(ifelse(!is.na(DTimes2$X.1)==FALSE, NA,
 camOps <- cameraOperation(CTtable = DTimes2, stationCol = "Camera", setupCol = "setup",
                           retrievalCol = "retrieval", hasProblems = T, dateFormat = "%Y-%m-%d")
 min(DTimes2$setup)
+max(DTimes2$setup)
 max(DTimes2$retrieval)
 max(DTimes2$retrieval)-min(DTimes2$setup)
 
@@ -70,7 +77,12 @@ CottonDetect <- detectionHistory(recordTable = df, species = "Mountain Cottontai
                                   day1="2022-04-02")
 colnames(JackDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
 colnames(CottonDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+#make index to subset whole detection history
+dateidx <- which(colnames(JackDetect[["detection_history"]]) %in% study_dates)
 
+#get detection matrix to study dates
+JackDetect2 <- JackDetect[["detection_history"]][, 33:64]
+CottonDetect2 <- CottonDetect[["detection_history"]][, 33:64]
 #####Covariates######################
 # Camera Grid shapefile
 Grid <- st_read("C:/Users/eliwi/OneDrive/Documents/Salida/GeospatialLayers/Grid3.shp")
@@ -159,9 +171,8 @@ CamLocs2$slope100 <- raster::extract(Slope, CamLocsSF, buffer=100, fun=function(
 #get independent events  for later use in relative abundance (RA) of humans/preds
 #get effort for use in RA index
 max(DTimes2$setup)
-study_dates <- c("2022-04-15", "2022-05-15")
 colidx <- which(colnames(camOps) %in% study_dates)
-Effort <- data.frame("Effort"=rowSums(camOps[,14:44], na.rm=T))
+Effort <- data.frame("Effort"=rowSums(camOps[,33:64], na.rm=T))
 Effort$Camera <- rownames(Effort)
 #human detections in this csv
 camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
@@ -186,21 +197,23 @@ camdf3 <- camdf2[camdf2$independent == TRUE,]
 saveRDS(camdf2, "./camdf2indobs.rds")
 saveRDS(camdf3, "./camdf3indonly.rds")
 ##    get relative activity of humans ##
+camdf3 <- readRDS("./camdf3indonly.rds")
 ppldf <- camdf3[camdf3$genus=="Homo",]
 ppldf <- ppldf[,c(2,16,17,22)]
 colnames(ppldf) <- c("cam","datetime","count","comments")
 ppldf$datetime <- as.POSIXct(ppldf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
 BUSH3 <- which(ppldf$cam == "BUSH3")
 ppldf$cam <- replace(x = ppldf$cam,list=BUSH3, values = "BUSH4")
-ppldf2 <- ppldf[ppldf$datetime > study_dates[1] & ppldf$datetime < study_dates[2],]
+ppldf2 <- ppldf[ppldf$datetime >= study_dates[1] & ppldf$datetime <= study_dates[2],]
 ppldf2 <- ppldf2 %>% group_by(cam)%>% summarise(HumanSum= sum(count))
 colnames(ppldf2) <- c("Camera", "SumPpl")
 noppl <- which(DTimes2$Camera %in% ppldf2$Camera == FALSE)
 nopplrow <- data.frame("Camera"=DTimes2$Camera[noppl], "SumPpl" = 0)
 HumansatCam <- rbind(ppldf2, nopplrow)
 HumansatCam2 <- left_join(HumansatCam, Effort, by="Camera")
-HumansatCam2$RA <- HumansatCam2$SumPpl/HumansatCam2$Effort
+HumansatCam2$HumansRA <- HumansatCam2$SumPpl/HumansatCam2$Effort
 #NAs in RA where no cam effort is
+HumansatCam2$HumansRA[is.na(HumansatCam2$HumansRA)] <- mean(HumansatCam2$HumansRA, na.rm=TRUE)
 
 ##   relative activity of predators ##
 predators <-c("Grey Fox", "Red Fox", "Coyote", "Canis Species", "Bobcat", "Puma", "Canine Family", "Carnivorous Mammal")
@@ -213,15 +226,18 @@ predf$datetime <- as.POSIXct(predf$datetime,format="%Y-%m-%d %H:%M:%S", tz="Amer
 BUSH3 <- which(predf$cam == "BUSH3")
 predf$cam <- replace(x = predf$cam,list=BUSH3, values = "BUSH4")
 
-predf2 <- predf[predf$datetime > study_dates[1] & predf$datetime < study_dates[2],]
+predf2 <- predf[predf$datetime >= study_dates[1] & predf$datetime <= study_dates[2],]
 predf2 <- predf2 %>% group_by(cam)%>% summarise(PredSum= sum(count))
 colnames(predf2) <- c("Camera", "SumPreds")
 nopreds <- which(DTimes2$Camera %in% predf2$Camera == FALSE)
 nopredsrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPreds" = 0)
 PredsatCam <- rbind(predf2, nopredsrow)
 PredsatCam2 <- left_join(PredsatCam, Effort, by="Camera")
-PredsatCam2$RA <- PredsatCam2$SumPreds/PredsatCam2$Effort
+PredsatCam2$PredsRA <- PredsatCam2$SumPreds/PredsatCam2$Effort
 #NAs in RA where no cam effort is
+PredsatCam2$PredsRA[is.na(PredsatCam2$PredsRA)] <- mean(PredsatCam2$PredsRA, na.rm=TRUE)
+#
+
 
 ##########################################
 ##    join all dfs in prep for modeling ##
@@ -231,6 +247,7 @@ CamLocs2$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH
 
 CoVsList <- list(PredsatCam2,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
 CoVs <- CoVsList%>% reduce(left_join, by="Camera")
+CoVs$Brand <- ifelse(grepl("BUSH", CoVs$Camera) ==TRUE, "BUSH", "ACORN")
 CoVs[CoVs$Camera == "BUSH3",]
 saveRDS(CoVs, "CoVsRabbitCo.rds")
 CoVs <- readRDS("./CoVsRabbitCo.rds")
@@ -244,28 +261,19 @@ corrplot(cor(CoVs[, unlist(lapply(CoVs, is.numeric))]),
 ######################################
 ##     detection covariates         ##
 ######################################
-lat_lon_df <- data.frame(id = "Salida",
-                         lat = 38.498805,
-                         lon = -106.014202)
-mon_near_pw <-
-  meteo_nearby_stations(
-    lat_lon_df = lat_lon_df,
-    lat_colname = "lat",
-    lon_colname = "lon",
-    var = "PRCP",
-    year_min = 2022,
-    year_max = 2022,
-    limit = 10,
-  )
-mon_near_pw
-pw_prcp_dat <-
-  meteo_pull_monitors(
-    monitors = mon_near_pw$pw$id[3],
-    date_min = "2022-04-02",
-    date_max = "2022-08-30",
-    var = "PRCP"
-  )
-head(pw_prcp_dat)
+precip <- read.csv("./precipdata.csv")
+precip$DATE <- as.Date(precip$DATE, format ="%Y-%m-%d")
+precip2 <- precip[precip$DATE >= study_dates[1] & precip$DATE <= study_dates[2],]
+precip3 <- as.data.frame(t(precip2[,4]))
+precip4 <- do.call("rbind", replicate(
+  36, precip3, simplify = FALSE))
+colnames(precip4) <- t(precip2[,3])
+which(as.character(seq.Date(as.Date(study_dates[1]), as.Date(study_dates[2]), by=1)) %in% colnames(precip4) ==FALSE)
+noprecipdata <- seq.Date(as.Date(study_dates[1]), as.Date(study_dates[2]), by=1)[10:11]
+noprecipdatadf <- data.frame(rep(NA, nrow(JackDetect2)),
+                             rep(NA, nrow(JackDetect2)))
+colnames(noprecipdatadf) <- noprecipdata
+precip5 <- cbind(precip4[,1:9],noprecipdatadf, precip4[,10:29])
 
 ##########################################################
 ##                      functions                       ##
