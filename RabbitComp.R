@@ -100,6 +100,17 @@ LineLength150 <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/LineLengt
 LineLength150 <- LineLength150[-5,]
 colnames(LineLength150)[2] <- "Length150"
 LineLength150 <- LineLength150[, c(4,2)]
+
+#get distance to trail for all points
+Trails <- st_read(dsn='C:/Users/eliwi/OneDrive/Documents/Salida/AllTrails.shp')
+Trails2 <- st_union(Trails)
+CamLocs2SF<-st_as_sf(CamLocs2, coords=c("Long", "Lat"), crs=CRS("+init=epsg:4326"))
+CamLocs2SF <- st_transform(CamLocs2SF, crs=st_crs(Trails))
+Dist2Trail <- st_distance(CamLocs2SF, Trails2)
+Dist2TrailDF <- cbind.data.frame(CamLocs2$Camera,as.numeric(Dist2Trail))
+colnames(Dist2TrailDF) <- c("Camera","Dist2Trail")
+
+
 #lc at different distances
 lc <- raster("C:/Users/eliwi/OneDrive/Documents/R/DeerISSFTWS/CoVs/NLCD_2019_Land_Cover_L48_20210604_JbsuwO6GkIW9V4xHbi6d.tiff")
 plot(lc)
@@ -245,7 +256,7 @@ PredsatCam2$PredsRA[is.na(PredsatCam2$PredsRA)] <- mean(PredsatCam2$PredsRA, na.
 CamLocs2
 CamLocs2$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8","BUSH9")
 
-CoVsList <- list(PredsatCam2,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
+CoVsList <- list(PredsatCam2,Dist2TrailDF,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
 CoVs <- CoVsList%>% reduce(left_join, by="Camera")
 CoVs$Brand <- ifelse(grepl("BUSH", CoVs$Camera) ==TRUE, "BUSH", "ACORN")
 CoVs[CoVs$Camera == "BUSH3",]
