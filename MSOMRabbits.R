@@ -1,25 +1,32 @@
 library(unmarked)
 library(ggplot2)
 #find rows with no detction info
-NArows <- which(apply(CottonDetect2, 1, function(x) all(is.na(x))))
-rownames(CottonDetect2)[NArows]
+NArows <- which(apply(GreyDetect2, 1, function(x) all(is.na(x))))
+rownames(GreyDetect2)[NArows]
 #Detection/non-detection data in named list
-y_list <- list(jackrabbit = JackDetect2[-NArows,],
-               cottontail = CottonDetect2[-NArows,])
+y_list <- list(GreyFox = GreyDetect2, #[-NArows,]
+               Coyote = CoyoteDetect2) #[-NArows,]
 
+saveRDS(y_list,"./y_list.rds")
+y_list <- readRDS("./y_list.rds")
 #observation covariates
 det_list <- precip5
 #site covariates
 CoVs <- readRDS("./CoVsRabbitCo.rds")
+which(GreyDetect2[NArows,])
+which(RedDetect2[NArows,])
+which(CoyoteDetect2[NArows,])
 Covs2 <- CoVs[!CoVs$Camera == "BUSH1" & !CoVs$Camera == "BUSH28",]
-Covs2$naiveoccuC <- rowMeans(CottonDetect2[-NArows,], na.rm=T)
-Covs2$naiveoccuJ <- rowMeans(JackDetect2[-NArows,], na.rm=T)
+Covs2$naiveoccuC <- rowSums(CottonDetect2[-NArows,], na.rm=T)
+Covs2$naiveoccuJ <- rowSums(JackDetect2[-NArows,], na.rm=T)
+Covs2$naiveoccuC <- ifelse(Covs2$naiveoccuC > 0 , 1, 0)
+Covs2$naiveoccuJ <- ifelse(Covs2$naiveoccuJ > 0 , 1, 0)
 
 colnames(Covs2)
-ggplot(Covs2, aes(x=Brand, y=naiveoccuC)) + geom_point()
-ggplot(Covs2, aes(x=Brand, y=naiveoccuJ)) + geom_point()
+ggplot(Covs2, aes(x=Dist2Trail, y=naiveoccuC)) + geom_point()
+ggplot(Covs2, aes(x=Dist2Trail, y=naiveoccuJ)) + geom_point()
 
-Covs3 <- Covs2
+Covs3 <- CoVs
 scaleind <- sapply(Covs3, is.numeric)
 Covs3[scaleind] <- lapply(Covs3[scaleind], scale)
 

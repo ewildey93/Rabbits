@@ -9,14 +9,13 @@ library(raster)
 library(terra)
 library(purrr)
 library(corrplot)
-library(rnoaa)
 library(data.table)
 library(dplyr)
 setwd("C:/Users/eliwi/OneDrive/Documents/R/Rabbits/Rabbits")
 
 
 #set dates of study
-study_dates <- c("2022-05-04", "2022-06-04")
+study_dates <- c("2022-05-04", "2022-08-15")
 
 #no human detections in this csv
 camdf1 <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/images.csv")
@@ -40,7 +39,7 @@ Bush31 <- camdf1[camdf1$deployment_id == "BUSH31",]
 
 
 #winnow dataframe down to lagomorphs
-df <- camdf1[camdf1$common_name=="White-tailed Jackrabbit" | camdf1$common_name == "Mountain Cottontail",]
+df <- camdf1[camdf1$common_name=="Grey Fox" | camdf1$common_name == "Red Fox" | camdf1$common_name == "Coyote",]
 df <- df[,c(2,4,14,16,17,22)]
 colnames(df) <- c("cam","file","species","datetime","count","comments")
 #replace BUSH3 with BUSH4
@@ -65,31 +64,44 @@ max(DTimes2$setup)
 max(DTimes2$retrieval)
 max(DTimes2$retrieval)-min(DTimes2$setup)
 
-JackDetect <- detectionHistory(recordTable = df, species = "White-tailed Jackrabbit", camOp = camOps,
+GreyDetect <- detectionHistory(recordTable = df, species = "Grey Fox", camOp = camOps,
                                output="binary", stationCol = "cam", speciesCol = "species",
                                 recordDateTimeCol = "datetime", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
                                 timeZone = "America/Denver", includeEffort = FALSE, occasionLength = 1,
                                day1="2022-04-02")
-CottonDetect <- detectionHistory(recordTable = df, species = "Mountain Cottontail", camOp = camOps,
+RedDetect <- detectionHistory(recordTable = df, species = "Red Fox", camOp = camOps,
                                   output="binary", stationCol = "cam", speciesCol = "species",
                                   recordDateTimeCol = "datetime", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
                                   timeZone = "America/Denver", includeEffort = FALSE, occasionLength = 1,
                                   day1="2022-04-02")
-colnames(JackDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
-colnames(CottonDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+CoyoteDetect <- detectionHistory(recordTable = df, species = "Coyote", camOp = camOps,
+                                 output="binary", stationCol = "cam", speciesCol = "species",
+                                 recordDateTimeCol = "datetime", recordDateTimeFormat = "%Y-%m-%d %H:%M:%S",
+                                 timeZone = "America/Denver", includeEffort = FALSE, occasionLength = 1,
+                                 day1="2022-04-02")
+colnames(GreyDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+colnames(RedDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+colnames(CoyoteDetect[["detection_history"]]) <- as.character(seq.Date(min(DTimes2$setup), max(DTimes2$retrieval), by = 1))
+
 #make index to subset whole detection history
-dateidx <- which(colnames(JackDetect[["detection_history"]]) %in% study_dates)
+dateidx <- which(colnames(GreyDetect[["detection_history"]]) %in% study_dates)
 
 #get detection matrix to study dates
-JackDetect2 <- JackDetect[["detection_history"]][, 33:64]
-CottonDetect2 <- CottonDetect[["detection_history"]][, 33:64]
+GreyDetect2 <- GreyDetect[["detection_history"]][, 33:136]
+RedDetect2 <- RedDetect[["detection_history"]][, 33:136]
+CoyoteDetect2 <- CoyoteDetect[["detection_history"]][, 33:136]
+saveRDS(GreyDetect2, "./GreyDetect2.rds")
+saveRDS(RedDetect2, "./RedDetect2.rds")
+saveRDS(CoyoteDetect2, "./CoyoteDetect2.rds")
 #####Covariates######################
 # Camera Grid shapefile
 Grid <- st_read("C:/Users/eliwi/OneDrive/Documents/Salida/GeospatialLayers/Grid3.shp")
 CamLocs <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/CamLocs.csv")
 str(CamLocs)
 CamLocs <- CamLocs[-c(38:41),]
-CamLocs[25, c(2,3)] <- c("38.498457","-105.986953")
+CamLocs[25, c(2,3)] <- c("38.498457","-105.986953") #BUSH19
+CamLocs[11, c(2,3)] <- c("38.505164","-106.014628") #BUSH5
+CamLocs$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8","BUSH9")
 #Line Length- length of trails in grid cell
 LineLength <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/LineLength.csv")
 LineLengthGrid <- LineLength[-5,]
@@ -100,15 +112,6 @@ LineLength150 <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/LineLengt
 LineLength150 <- LineLength150[-5,]
 colnames(LineLength150)[2] <- "Length150"
 LineLength150 <- LineLength150[, c(4,2)]
-
-#get distance to trail for all points
-Trails <- st_read(dsn='C:/Users/eliwi/OneDrive/Documents/Salida/AllTrails.shp')
-Trails2 <- st_union(Trails)
-CamLocs2SF<-st_as_sf(CamLocs2, coords=c("Long", "Lat"), crs=CRS("+init=epsg:4326"))
-CamLocs2SF <- st_transform(CamLocs2SF, crs=st_crs(Trails))
-Dist2Trail <- st_distance(CamLocs2SF, Trails2)
-Dist2TrailDF <- cbind.data.frame(CamLocs2$Camera,as.numeric(Dist2Trail))
-colnames(Dist2TrailDF) <- c("Camera","Dist2Trail")
 
 
 #lc at different distances
@@ -157,6 +160,14 @@ ShrubDF$Camera[7:14] <- c("BUSH1","BUSH2","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8
 colnames(ForestDF)[2:5] <- c("lc100.Forest","Forest", "lc250.Forest","lc385.Forest")
 colnames(ShrubDF)[2:5] <- c("lc100.Shrub","Shrub", "lc250.Shrub","lc385.Shrub")
 
+#get distance to trail for all points
+Trails <- st_read(dsn='C:/Users/eliwi/OneDrive/Documents/Salida/AllTrails.shp')
+Trails2 <- st_union(Trails)
+CamLocsSF2 <- st_transform(CamLocsSF, crs=st_crs(Trails))
+Dist2Trail <- st_distance(CamLocsSF2, Trails2)
+Dist2TrailDF <- cbind.data.frame(CamLocs$Camera,as.numeric(Dist2Trail))
+colnames(Dist2TrailDF) <- c("Camera","Dist2Trail")
+
 #convert herbaceous cover to polygon and get distance to values
 herb <- rasterToPolygons(lc2, function (x) x == 71, n=16, dissolve = T)
 writeOGR(herb, "./", "herbPoly.shp", driver="ESRI Shapefile")
@@ -183,7 +194,7 @@ CamLocs2$slope100 <- raster::extract(Slope, CamLocsSF, buffer=100, fun=function(
 #get effort for use in RA index
 max(DTimes2$setup)
 colidx <- which(colnames(camOps) %in% study_dates)
-Effort <- data.frame("Effort"=rowSums(camOps[,33:64], na.rm=T))
+Effort <- data.frame("Effort"=rowSums(camOps[,33:136], na.rm=T))
 Effort$Camera <- rownames(Effort)
 #human detections in this csv
 camdf <- read.csv("C:/Users/eliwi/OneDrive/Documents/R/TTE/TTE/wildlifeinsights5.5/images.csv")
@@ -207,6 +218,7 @@ camdf2 <- assessTemporalIndependence2(intable = camdf,deltaTimeComparedTo = "las
 camdf3 <- camdf2[camdf2$independent == TRUE,]
 saveRDS(camdf2, "./camdf2indobs.rds")
 saveRDS(camdf3, "./camdf3indonly.rds")
+camdf3 <- readRDS("./camdf3indonly.rds")
 ##    get relative activity of humans ##
 camdf3 <- readRDS("./camdf3indonly.rds")
 ppldf <- camdf3[camdf3$genus=="Homo",]
@@ -227,26 +239,26 @@ HumansatCam2$HumansRA <- HumansatCam2$SumPpl/HumansatCam2$Effort
 HumansatCam2$HumansRA[is.na(HumansatCam2$HumansRA)] <- mean(HumansatCam2$HumansRA, na.rm=TRUE)
 
 ##   relative activity of predators ##
-predators <-c("Grey Fox", "Red Fox", "Coyote", "Canis Species", "Bobcat", "Puma", "Canine Family", "Carnivorous Mammal")
-predf <- camdf3[camdf3$SPP %in% predators,]
+prey <-c('Black-tailed Jackrabbit', "Mountain Cottontail", "Rock Squirrel", "White-tailed Jackrabbit")
+preydf <- camdf3[camdf3$SPP %in% prey,]
 
-predf <- predf[,c(2,16,17,22)]
-colnames(predf) <- c("cam","datetime","count","comments")
-predf$datetime <- as.POSIXct(predf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
+preydf <- preydf[,c(2,16,17,22)]
+colnames(preydf) <- c("cam","datetime","count","comments")
+preydf$datetime <- as.POSIXct(preydf$datetime,format="%Y-%m-%d %H:%M:%S", tz="America/Denver")
 
-BUSH3 <- which(predf$cam == "BUSH3")
-predf$cam <- replace(x = predf$cam,list=BUSH3, values = "BUSH4")
+BUSH3 <- which(preydf$cam == "BUSH3")
+preydf$cam <- replace(x = preydf$cam,list=BUSH3, values = "BUSH4")
 
-predf2 <- predf[predf$datetime >= study_dates[1] & predf$datetime <= study_dates[2],]
-predf2 <- predf2 %>% group_by(cam)%>% summarise(PredSum= sum(count))
-colnames(predf2) <- c("Camera", "SumPreds")
-nopreds <- which(DTimes2$Camera %in% predf2$Camera == FALSE)
-nopredsrow <- data.frame("Camera"=DTimes2$Camera[nopreds], "SumPreds" = 0)
-PredsatCam <- rbind(predf2, nopredsrow)
-PredsatCam2 <- left_join(PredsatCam, Effort, by="Camera")
-PredsatCam2$PredsRA <- PredsatCam2$SumPreds/PredsatCam2$Effort
+preydf2 <- preydf[preydf$datetime >= study_dates[1] & preydf$datetime <= study_dates[2],]
+preydf2 <- preydf2 %>% group_by(cam)%>% summarise(PreySum= sum(count))
+colnames(preydf2) <- c("Camera", "SumPrey")
+noprey <- which(DTimes2$Camera %in% preydf2$Camera == FALSE)
+nopreyrow <- data.frame("Camera"=DTimes2$Camera[noprey], "SumPrey" = 0)
+PreyatCam <- rbind(preydf2, nopreyrow)
+PreyatCam2 <- left_join(PreyatCam, Effort, by="Camera")
+PreyatCam2$PreyRA <- PreyatCam2$SumPrey/PreyatCam2$Effort
 #NAs in RA where no cam effort is
-PredsatCam2$PredsRA[is.na(PredsatCam2$PredsRA)] <- mean(PredsatCam2$PredsRA, na.rm=TRUE)
+PreyatCam2$PreyRA[is.na(PreyatCam2$PreyRA)] <- mean(PreyatCam2$PreyRA, na.rm=TRUE)
 #
 
 
@@ -256,7 +268,7 @@ PredsatCam2$PredsRA[is.na(PredsatCam2$PredsRA)] <- mean(PredsatCam2$PredsRA, na.
 CamLocs2
 CamLocs2$Camera[7:15] <- c("BUSH1","BUSH2","BUSH3","BUSH4","BUSH5","BUSH6","BUSH7","BUSH8","BUSH9")
 
-CoVsList <- list(PredsatCam2,Dist2TrailDF,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
+CoVsList <- list(PreyatCam2,Dist2TrailDF,HumansatCam2,CamLocs2,LineLengthGrid, LineLength150, ForestDF,ShrubDF)
 CoVs <- CoVsList%>% reduce(left_join, by="Camera")
 CoVs$Brand <- ifelse(grepl("BUSH", CoVs$Camera) ==TRUE, "BUSH", "ACORN")
 CoVs[CoVs$Camera == "BUSH3",]
